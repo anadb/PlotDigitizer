@@ -11,10 +11,14 @@ dependencies = [
     "matplotlib>=3.7",
     "pytesseract>=0.3.10",
     "opencv-python-headless>=4.8",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",
 ]
 
 [project.scripts]
-plot_digitizer = "plot_digitizer.cli:main"
+plot_digitizer     = "plot_digitizer.cli:main"
+plot_digitizer_web = "plot_digitizer.web.app:main"
 
 [build-system]
 requires = ["hatchling"]

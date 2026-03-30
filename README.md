@@ -6,7 +6,31 @@ Handles multiple coloured curves, overlapping curves, grid lines, and noisy or l
 
 ---
 
-## Quick start
+## Web GUI (recommended)
+
+```bash
+uv run plot_digitizer_web
+# Opens at http://127.0.0.1:8000
+```
+
+Optional flags: `--host 0.0.0.0 --port 8080 --reload`
+
+**Features:**
+- Drop an image onto the page or click to browse
+- Set axis ranges and all detection parameters with sliders/inputs
+- Click **Auto-detect curves** to run the pipeline
+- Canvas supports zoom (scroll) and pan (Alt+drag or middle-drag)
+- Click a curve to select it — all its points become draggable handles
+- **Drag** any handle to reposition it
+- **Double-click** a curve line to insert a new point there
+- **Right-click** a handle (or press Delete) to remove it
+- Toggle curve visibility or delete a whole curve from the list panel
+- Double-click a curve name in the list to rename it
+- Click **Export CSV** when done — downloads `digitized.csv`
+
+---
+
+## Quick start (CLI)
 
 ```bash
 # Install with uv (recommended)

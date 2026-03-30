@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlotDigitizer</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0d1117;
+  --panel:    #161b22;
+  --border:   #30363d;
+  --accent:   #e94560;
+  --text:     #c9d1d9;
+  --muted:    #8b949e;
+  --input-bg: #21262d;
+  --hover-bg: rgba(255,255,255,0.04);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Top bar ─────────────────────────────────────────────── */
+#topbar {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+#topbar h1 { font-size: 14px; font-weight: 700; color: var(--accent); letter-spacing: .3px; }
+#status-msg { font-size: 11px; color: var(--muted); min-width: 160px; }
+.spacer { flex: 1; }
+.top-btn {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.top-btn:hover { border-color: var(--accent); color: var(--accent); }
+.top-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ── Layout ──────────────────────────────────────────────── */
+#main { display: flex; flex: 1; overflow: hidden; }
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+#sidebar {
+  width: 284px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.sec { padding: 9px 12px; border-bottom: 1px solid var(--border); }
+
+.sec-hdr {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  user-select: none;
+}
+.sec-hdr .arr { margin-left: auto; transition: transform .15s; font-style: normal; }
+.sec-hdr.closed .arr { transform: rotate(-90deg); }
+.sec-body.hidden { display: none; }
+
+/* ── Upload zone ─────────────────────────────────────────── */
+#drop-zone {
+  border: 1.5px dashed var(--border);
+  border-radius: 6px;
+  padding: 16px 8px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--muted);
+  transition: border-color .15s, background .15s, color .15s;
+  user-select: none;
+}
+#drop-zone:hover, #drop-zone.over {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(233,69,96,.05);
+}
+#drop-zone .icon { font-size: 20px; margin-bottom: 3px; }
+#drop-zone .sub  { font-size: 10px; margin-top: 2px; color: var(--muted); }
+
+/* ── Param rows ──────────────────────────────────────────── */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+.row label {
+  width: 108px;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.row input[type=number],
+.row input[type=text],
+.row select {
+  flex: 1;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 3px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  outline: none;
+  min-width: 0;
+}
+.row input:focus, .row select:focus { border-color: var(--accent); }
+.row input[type=range] { flex: 1; accent-color: var(--accent); }
+.row input[type=checkbox] { width: 14px; height: 14px; accent-color: var(--accent); }
+.val {
+  min-width: 30px;
+  text-align: right;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+.pair { display: flex; gap: 4px; flex: 1; }
+.pair input { flex: 1; min-width: 0; }
+.hint { font-size: 10px; color: #555; margin-top: 2px; padding-left: 114px; line-height: 1.4; }
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.btn {
+  display: block;
+  width: 100%;
+  padding: 7px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: background .15s, opacity .15s;
+  outline: none;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #c73652; }
+.btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+.btn-sec { background: var(--input-bg); color: var(--text); border: 1px solid var(--border); }
+.btn-sec:hover { border-color: var(--accent); color: var(--accent); }
+.btn-sec:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ── Curves list ─────────────────────────────────────────── */
+.cv-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 5px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-bottom: 1px;
+  transition: background .1s;
+}
+.cv-item:hover { background: var(--hover-bg); }
+.cv-item.sel { background: rgba(233,69,96,.12); outline: 1px solid rgba(233,69,96,.3); border-radius: 4px; }
+
+.cv-dot {
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  cursor: pointer; border: 1px solid rgba(255,255,255,0.15);
+  transition: transform .12s, box-shadow .12s;
+  position: relative;
+}
+.cv-dot:hover { transform: scale(1.25); box-shadow: 0 0 0 2px rgba(255,255,255,0.3); }
+.cv-dot input[type=color] {
+  position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%;
+  cursor: pointer; border: none; padding: 0;
+}
+
+.cv-name {
+  flex: 1;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  outline: none;
+  border-radius: 2px;
+}
+.cv-name:focus {
+  background: var(--input-bg);
+  outline: 1px solid var(--accent);
+  padding: 0 3px;
+  white-space: normal;
+  overflow: visible;
+}
+
+.cv-pts { font-size: 10px; color: #555; flex-shrink: 0; }
+
+.cv-eye, .cv-del {
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: .45;
+  flex-shrink: 0;
+}
+.cv-eye:hover { opacity: 1; }
+.cv-del:hover { opacity: 1; color: var(--accent); }
+
+/* ── Canvas area ─────────────────────────────────────────── */
+#canvas-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #080c10;
+}
+#cv {
+  position: absolute;
+  top: 0; left: 0;
+  cursor: crosshair;
+  display: block;
+}
+#loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(13,17,23,.82);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--text);
+  z-index: 5;
+}
+#loading-overlay.show { display: flex; }
+.spinner {
+  width: 28px; height: 28px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#empty-hint {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  text-align: center;
+  color: #3a4050;
+  font-size: 13px;
+  line-height: 1.8;
+  pointer-events: none;
+}
+
+/* ── Status bar ──────────────────────────────────────────── */
+#statusbar {
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  padding: 3px 12px;
+  font-size: 10px;
+  color: var(--muted);
+  display: flex;
+  gap: 16px;
+  flex-shrink: 0;
+}
+#coord-display { margin-left: auto; color: var(--text); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div id="topbar">
+  <h1>⟁ PlotDigitizer</h1>
+  <span id="status-msg">Load an image to begin</span>
+  <span class="spacer"></span>
+  <button class="top-btn" id="reset-view-btn" disabled>⤢ Fit</button>
+  <button class="top-btn" id="export-btn" disabled>⬇ Export CSV</button>
+</div>
+
+<!-- Main -->
+<div id="main">
+  <div id="sidebar">
+
+    <!-- Upload -->
+    <div class="sec">
+      <div class="sec-hdr" onclick="toggleSec(this)">Image <i class="arr">▾</i></div>
+      <div class="sec-body">
+        <div id="drop-zone">
+          <div class="icon">🖼</div>
+          <div id="drop-text">Drop image here or click to browse</div>
+          <div class="sub" id="drop-sub">PNG, JPEG supported</div>
+        </div>
+        <input type="file" id="file-input" accept="image/*" hidden>
+      </div>
+    </div>
+
+    <!-- Axis ranges -->
+    <div class="sec">
+      <div class="sec-hdr" onclick="toggleSec(this)">Axis ranges <i class="arr">▾</i></div>
+      <div class="sec-body">
+        <div class="row">
+          <label>X range</label>
+          <div class="pair">
+            <input type="text" id="xmin" placeholder="min" title="Left edge value (e.g. 1545.5)">
+            <input type="text" id="xmax" placeholder="max" title="Right edge value">
+          </div>
+        </div>
+        <div class="row">
+          <label>Y range</label>
+          <div class="pair">
+            <input type="text" id="ymin" placeholder="bottom" title="Bottom (min) value">
+            <input type="text" id="ymax" placeholder="top"    title="Top (max) value">
+          </div>
+        </div>
+        <div class="hint">Y: bottom value first, top value second</div>
+        <div class="hint">Leave blank to use OCR (less reliable)</div>
+      </div>
+    </div>
+
+    <!-- Detection -->
+    <div class="sec">
+      <div class="sec-hdr" onclick="toggleSec(this)">Detection <i class="arr">▾</i></div>
+      <div class="sec-body">
+        <div class="row">
+          <label>Method</label>
+          <select id="method">
+            <option value="naive">Naive (spline)</option>
+            <option value="cv">CV (skeleton)</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>N curves</label>
+          <input type="number" id="n_curves" placeholder="auto" min="1" max="20" title="Keep top-N colour segments">
+        </div>
+        <div class="row">
+          <label>Has grid</label>
+          <input type="checkbox" id="has_grid" title="Suppress grid lines before detection">
+        </div>
+      </div>
+    </div>
+
+    <!-- Colour -->
+    <div class="sec">
+      <div class="sec-hdr" onclick="toggleSec(this)">Colour segmentation <i class="arr">▾</i></div>
+      <div class="sec-body">
+        <div class="row">
+          <label>Sat threshold</label>
+          <input type="range" id="sat_threshold" min="0.02" max="0.50" step="0.01" value="0.20">
+          <span class="val" id="sat_val">0.20</span>
+        </div>
+        <div class="hint">Lower = detect paler curves</div>
+        <div class="row" style="margin-top:5px">
+          <label>Min coverage</label>
+          <input type="range" id="min_col_coverage" min="0.01" max="1.00" step="0.01" value="0.20">
+          <span class="val" id="cov_val">0.20</span>
+        </div>
+        <div class="hint">Min fraction of canvas width a curve must span</div>
+        <div class="row" style="margin-top:5px">
+          <label>Hue bins</label>
+          <input type="number" id="hue_bins" value="18" min="6" max="72" title="More bins = finer colour separation">
+        </div>
+        <div class="row">
+          <label>Span frac</label>
+          <input type="range" id="span_frac" min="0.20" max="0.90" step="0.05" value="0.55">
+          <span class="val" id="span_val">0.55</span>
+        </div>
+        <div class="hint">Row/col span fraction to count as grid line</div>
+      </div>
+    </div>
+
+    <!-- Extraction -->
+    <div class="sec">
+      <div class="sec-hdr" onclick="toggleSec(this)">Extraction <i class="arr">▾</i></div>
+      <div class="sec-body">
+        <div class="row">
+          <label>Smoothing</label>
+          <input type="range" id="smoothing" min="0.1" max="10" step="0.1" value="1.0">
+          <span class="val" id="smooth_val">1.0</span>
+        </div>
+        <div class="hint">Higher = smoother spline (good for noisy data)</div>
+        <div class="row" style="margin-top:5px">
+          <label>N samples</label>
+          <input type="number" id="n_samples" value="300" min="50" max="2000" title="Output points per curve">
+        </div>
+        <div class="row">
+          <label>Max thickness</label>
+          <input type="number" id="max_thickness" placeholder="auto" min="4" max="300" title="Max pixel cluster height per column">
+        </div>
+        <div class="row">
+          <label>Notch factor</label>
+          <input type="range" id="notch_factor" min="1.0" max="10" step="0.5" value="3.0">
+          <span class="val" id="notch_val">3.0</span>
+        </div>
+        <div class="hint">Lower = capture deeper resonance notches</div>
+      </div>
+    </div>
+
+    <!-- Detect button -->
+    <div class="sec">
+      <button class="btn btn-primary" id="detect-btn" disabled>⚡ Auto-detect curves</button>
+    </div>
+
+    <!-- Curves list -->
+    <div class="sec" id="curves-sec" style="display:none">
+      <div class="sec-hdr">
+        Detected curves
+        <span id="curve-count" style="color:var(--accent);margin-left:4px"></span>
+      </div>
+      <div id="curves-list"></div>
+      <div id="edit-hint" style="font-size:10px;color:#555;margin-top:6px;line-height:1.5"></div>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <!-- Export -->
+    <div class="sec">
+      <button class="btn btn-sec" id="export-btn2" disabled>⬇ Export CSV</button>
+    </div>
+
+  </div><!-- /sidebar -->
+
+  <div id="canvas-wrap">
+    <canvas id="cv"></canvas>
+    <div id="loading-overlay">
+      <div class="spinner"></div>
+      <span>Detecting curves…</span>
+    </div>
+    <div id="empty-hint">
+      Upload a plot image to begin<br>
+      <span style="font-size:11px">Supports PNG and JPEG</span>
+    </div>
+  </div>
+</div><!-- /main -->
+
+<div id="statusbar">
+  <span>Scroll: zoom &nbsp;|&nbsp; Alt+drag / middle-drag: pan &nbsp;|&nbsp; Click curve: select &nbsp;|&nbsp; Drag point: move &nbsp;|&nbsp; Dbl-click line: add point &nbsp;|&nbsp; Right-click point: delete</span>
+  <span id="coord-display">—</span>
+</div>
+
+<script>
+"use strict";
+
+// ═══════════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════════
+const S = {
+  imageId:  null,
+  imgEl:    null,      // HTMLImageElement for drawImage
+  imgW: 0,  imgH: 0,
+
+  // Detected curves: [{label, color:[r,g,b], points:[[px,py],...], visible}]
+  curves:   [],
+  calib:    null,      // {x:[pLo,vLo,pHi,vHi], y:[...]}
+  plotArea: null,
+
+  selCurve: -1,        // index into S.curves
+
+  // View transform
+  vScale: 1,
+  vOX: 0, vOY: 0,
+
+  // Interaction
+  dragging: null,      // {ci, pi}
+  panning:  null,      // {sx, sy, sox, soy}
+  hoverPt:  null,      // {ci, pi}
+  hoverSeg: null,      // {ci, si}  — for insertion cue
+  _mx: 0, _my: 0,      // last mouse canvas pos
+};
+
+// ═══════════════════════════════════════════════════════════
+// Canvas
+// ═══════════════════════════════════════════════════════════
+const wrap  = document.getElementById('canvas-wrap');
+const cv    = document.getElementById('cv');
+const ctx   = cv.getContext('2d');
+
+function resizeCanvas() {
+  cv.width  = wrap.clientWidth;
+  cv.height = wrap.clientHeight;
+  if (S.imgEl) fitView();
+  draw();
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// ═══════════════════════════════════════════════════════════
+// View helpers
+// ═══════════════════════════════════════════════════════════
+function toCanvas(ix, iy) {
+  return [ix * S.vScale + S.vOX, iy * S.vScale + S.vOY];
+}
+function toImage(cx, cy) {
+  return [(cx - S.vOX) / S.vScale, (cy - S.vOY) / S.vScale];
+}
+function fitView() {
+  const cw = cv.width, ch = cv.height;
+  const scale = Math.min(cw / S.imgW, ch / S.imgH) * 0.95;
+  S.vScale = scale;
+  S.vOX = (cw - S.imgW * scale) / 2;
+  S.vOY = (ch - S.imgH * scale) / 2;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Draw
+// ═══════════════════════════════════════════════════════════
+let _raf = false;
+function schedDraw() {
+  if (_raf) return;
+  _raf = true;
+  requestAnimationFrame(() => { _raf = false; draw(); });
+}
+
+function draw() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if (!S.imgEl) return;
+
+  ctx.drawImage(S.imgEl, S.vOX, S.vOY, S.imgW * S.vScale, S.imgH * S.vScale);
+
+  for (let ci = 0; ci < S.curves.length; ci++) {
+    const c = S.curves[ci];
+    if (!c.visible || c.points.length < 2) continue;
+    const [r, g, b] = c.color;
+    const sel   = ci === S.selCurve;
+    const hov   = (S.hoverPt  && S.hoverPt.ci  === ci) ||
+                  (S.hoverSeg && S.hoverSeg.ci === ci);
+
+    // --- Line ---
+    ctx.beginPath();
+    ctx.strokeStyle = `rgb(${r},${g},${b})`;
+    ctx.lineWidth   = sel ? 2.2 : hov ? 1.8 : 1.5;
+    ctx.globalAlpha = sel ? 1 : hov ? 0.85 : 0.65;
+    const [x0,y0] = toCanvas(c.points[0][0], c.points[0][1]);
+    ctx.moveTo(x0, y0);
+    for (let pi = 1; pi < c.points.length; pi++) {
+      const [xi,yi] = toCanvas(c.points[pi][0], c.points[pi][1]);
+      ctx.lineTo(xi, yi);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    if (!sel) continue;
+
+    // --- Segment insertion cue ---
+    if (S.hoverSeg && S.hoverSeg.ci === ci) {
+      const si = S.hoverSeg.si;
+      const [ax,ay] = toCanvas(c.points[si][0],   c.points[si][1]);
+      const [bx,by] = toCanvas(c.points[si+1][0], c.points[si+1][1]);
+      ctx.beginPath();
+      ctx.moveTo(ax,ay); ctx.lineTo(bx,by);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth   = 2;
+      ctx.globalAlpha = 0.45;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      // + marker
+      ctx.beginPath();
+      ctx.arc(S._mx, S._my, 5, 0, Math.PI*2);
+      ctx.fillStyle = '#fff';
+      ctx.globalAlpha = 0.75;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // --- Points (only on selected curve) ---
+    for (let pi = 0; pi < c.points.length; pi++) {
+      const [cx2,cy2] = toCanvas(c.points[pi][0], c.points[pi][1]);
+      const hp = S.hoverPt && S.hoverPt.ci === ci && S.hoverPt.pi === pi;
+      const dp = S.dragging && S.dragging.ci === ci && S.dragging.pi === pi;
+      const big = hp || dp;
+
+      ctx.beginPath();
+      ctx.arc(cx2, cy2, big ? 6 : 3, 0, Math.PI * 2);
+      ctx.fillStyle   = big ? '#ffffff' : `rgba(${r},${g},${b},0.85)`;
+      ctx.fill();
+      if (big) {
+        ctx.strokeStyle = `rgb(${r},${g},${b})`;
+        ctx.lineWidth   = 1.5;
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// Hit testing
+// ═══════════════════════════════════════════════════════════
+const PT_R   = 8;   // canvas px radius for point hit
+const SEG_D  = 6;   // canvas px distance for segment hit
+
+function hitPoint(mx, my) {
+  if (S.selCurve < 0) return null;
+  const c = S.curves[S.selCurve];
+  if (!c || !c.visible) return null;
+  let bestPi = -1, bestD = PT_R;
+  for (let pi = 0; pi < c.points.length; pi++) {
+    const [px,py] = toCanvas(c.points[pi][0], c.points[pi][1]);
+    const d = Math.hypot(mx-px, my-py);
+    if (d < bestD) { bestD = d; bestPi = pi; }
+  }
+  return bestPi >= 0 ? { ci: S.selCurve, pi: bestPi } : null;
+}
+
+function distSeg(px,py, ax,ay, bx,by) {
+  const dx=bx-ax, dy=by-ay, len2=dx*dx+dy*dy;
+  if (len2 === 0) return Math.hypot(px-ax, py-ay);
+  const t = Math.max(0, Math.min(1, ((px-ax)*dx+(py-ay)*dy)/len2));
+  return Math.hypot(px-ax-t*dx, py-ay-t*dy);
+}
+
+function hitSegment(mx, my) {
+  if (S.selCurve < 0) return null;
+  const c = S.curves[S.selCurve];
+  if (!c || !c.visible) return null;
+  let bestSi = -1, bestD = SEG_D;
+  for (let si = 0; si < c.points.length-1; si++) {
+    const [ax,ay] = toCanvas(c.points[si][0],   c.points[si][1]);
+    const [bx,by] = toCanvas(c.points[si+1][0], c.points[si+1][1]);
+    const d = distSeg(mx,my, ax,ay, bx,by);
+    if (d < bestD) { bestD = d; bestSi = si; }
+  }
+  return bestSi >= 0 ? { ci: S.selCurve, si: bestSi } : null;
+}
+
+function hitCurve(mx, my) {
+  for (let ci = 0; ci < S.curves.length; ci++) {
+    const c = S.curves[ci];
+    if (!c.visible || c.points.length < 2) continue;
+    for (let si = 0; si < c.points.length-1; si++) {
+      const [ax,ay] = toCanvas(c.points[si][0],   c.points[si][1]);
+      const [bx,by] = toCanvas(c.points[si+1][0], c.points[si+1][1]);
+      if (distSeg(mx,my, ax,ay, bx,by) < SEG_D) return ci;
+    }
+  }
+  return -1;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Mouse events
+// ═══════════════════════════════════════════════════════════
+cv.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const hp = hitPoint(e.offsetX, e.offsetY);
+  if (hp) {
+    S.curves[hp.ci].points.splice(hp.pi, 1);
+    S.hoverPt = null;
+    updateCurvesList();
+    schedDraw();
+  }
+});
+
+cv.addEventListener('dblclick', e => {
+  if (S.selCurve < 0) return;
+  const hs = hitSegment(e.offsetX, e.offsetY);
+  if (!hs) return;
+  const [ix,iy] = toImage(e.offsetX, e.offsetY);
+  S.curves[hs.ci].points.splice(hs.si + 1, 0, [ix, iy]);
+  S.hoverSeg = null;
+  updateCurvesList();
+  schedDraw();
+});
+
+cv.addEventListener('mousedown', e => {
+  // Middle click or Alt+Left = pan
+  if (e.button === 1 || (e.button === 0 && e.altKey)) {
+    S.panning = { sx: e.clientX, sy: e.clientY, sox: S.vOX, soy: S.vOY };
+    cv.style.cursor = 'grabbing';
+    return;
+  }
+  if (e.button !== 0) return;
+
+  // Try drag a point
+  const hp = hitPoint(e.offsetX, e.offsetY);
+  if (hp) {
+    S.dragging = hp;
+    cv.style.cursor = 'grabbing';
+    return;
+  }
+
+  // Click on curve line to select it
+  const ci = hitCurve(e.offsetX, e.offsetY);
+  if (ci >= 0 && ci !== S.selCurve) {
+    S.selCurve = ci;
+    S.hoverSeg = null;
+    updateCurvesList();
+    schedDraw();
+  }
+});
+
+cv.addEventListener('mousemove', e => {
+  const mx = e.offsetX, my = e.offsetY;
+  S._mx = mx; S._my = my;
+
+  if (S.panning) {
+    S.vOX = S.panning.sox + (e.clientX - S.panning.sx);
+    S.vOY = S.panning.soy + (e.clientY - S.panning.sy);
+    schedDraw();
+    return;
+  }
+
+  if (S.dragging) {
+    const [ix,iy] = toImage(mx, my);
+    S.curves[S.dragging.ci].points[S.dragging.pi] = [ix, iy];
+    showCoord(ix, iy);
+    schedDraw();
+    return;
+  }
+
+  // Hover: point first, then segment, then curve
+  const hp = hitPoint(mx, my);
+  if (hp) {
+    const changed = !S.hoverPt || S.hoverPt.pi !== hp.pi;
+    S.hoverPt  = hp;
+    S.hoverSeg = null;
+    cv.style.cursor = 'grab';
+    if (changed) schedDraw();
+    const [ix,iy] = toImage(mx, my);
+    showCoord(ix, iy);
+    return;
+  }
+
+  const prevHp = S.hoverPt;
+  S.hoverPt = null;
+
+  const hs = hitSegment(mx, my);
+  if (hs) {
+    const changed = !S.hoverSeg || S.hoverSeg.si !== hs.si;
+    S.hoverSeg = hs;
+    cv.style.cursor = 'cell';
+    if (changed || prevHp) schedDraw();
+    return;
+  }
+
+  const prevHs = S.hoverSeg;
+  S.hoverSeg = null;
+
+  const ci = hitCurve(mx, my);
+  cv.style.cursor = ci >= 0 ? 'pointer' : 'crosshair';
+  if (prevHp || prevHs) schedDraw();
+
+  const [ix,iy] = toImage(mx, my);
+  showCoord(ix, iy);
+});
+
+cv.addEventListener('mouseup', () => {
+  S.panning  = null;
+  S.dragging = null;
+  cv.style.cursor = 'crosshair';
+});
+
+cv.addEventListener('mouseleave', () => {
+  S.panning  = null;
+  S.dragging = null;
+  const changed = S.hoverPt || S.hoverSeg;
+  S.hoverPt  = null;
+  S.hoverSeg = null;
+  document.getElementById('coord-display').textContent = '—';
+  if (changed) schedDraw();
+});
+
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const f = e.deltaY < 0 ? 1.12 : 1/1.12;
+  const mx = e.offsetX, my = e.offsetY;
+  S.vScale *= f;
+  S.vOX = mx - (mx - S.vOX) * f;
+  S.vOY = my - (my - S.vOY) * f;
+  schedDraw();
+}, { passive: false });
+
+// Keyboard shortcuts
+window.addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R') { if (S.imgEl) { fitView(); schedDraw(); } }
+  if (e.key === 'Escape') { S.selCurve = -1; updateCurvesList(); schedDraw(); }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && S.hoverPt) {
+    const { ci, pi } = S.hoverPt;
+    S.curves[ci].points.splice(pi, 1);
+    S.hoverPt = null;
+    updateCurvesList();
+    schedDraw();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// Coordinate display
+// ═══════════════════════════════════════════════════════════
+function showCoord(ix, iy) {
+  const el = document.getElementById('coord-display');
+  if (!S.calib) { el.textContent = `px (${Math.round(ix)}, ${Math.round(iy)})`; return; }
+  const dx = pxToData(ix, S.calib.x);
+  const dy = pxToData(iy, S.calib.y);
+  el.textContent = `data (${dx.toPrecision(5)},  ${dy.toPrecision(5)})`;
+}
+
+function rgbToHex(r, g, b) {
+  return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+}
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
+
+function pxToData(px, c) {
+  const [pLo,vLo,pHi,vHi] = c;
+  if (pHi === pLo) return vLo;
+  return vLo + (px - pLo) * (vHi - vLo) / (pHi - pLo);
+}
+
+// ═══════════════════════════════════════════════════════════
+// Upload
+// ═══════════════════════════════════════════════════════════
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('over');
+  if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) uploadFile(fileInput.files[0]); });
+
+async function uploadFile(file) {
+  setStatus('Uploading…');
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch('/api/upload', { method: 'POST', body: fd });
+  if (!res.ok) { setStatus('Upload failed'); return; }
+  const data = await res.json();
+
+  S.imageId = data.image_id;
+  S.imgW    = data.width;
+  S.imgH    = data.height;
+
+  // Load image element for canvas drawing
+  const img  = new Image();
+  img.src    = `/api/image/${S.imageId}`;
+  img.onload = () => {
+    S.imgEl = img;
+    document.getElementById('empty-hint').style.display = 'none';
+    fitView();
+    draw();
+    document.getElementById('reset-view-btn').disabled = false;
+  };
+
+  document.getElementById('detect-btn').disabled = false;
+  document.getElementById('drop-text').textContent = file.name;
+  document.getElementById('drop-sub').textContent  = `${data.width} × ${data.height} px`;
+  setStatus(`Loaded: ${file.name}`);
+}
+
+// ═══════════════════════════════════════════════════════════
+// Sliders ↔ value display
+// ═══════════════════════════════════════════════════════════
+function linkSlider(id, valId, decimals) {
+  const el  = document.getElementById(id);
+  const val = document.getElementById(valId);
+  el.addEventListener('input', () => { val.textContent = parseFloat(el.value).toFixed(decimals); });
+}
+linkSlider('sat_threshold',   'sat_val',    2);
+linkSlider('min_col_coverage','cov_val',    2);
+linkSlider('span_frac',       'span_val',   2);
+linkSlider('smoothing',       'smooth_val', 1);
+linkSlider('notch_factor',    'notch_val',  1);
+
+// ═══════════════════════════════════════════════════════════
+// Build detection params from UI
+// ═══════════════════════════════════════════════════════════
+function parseNum(s) {
+  // Accept both dot and comma as decimal separator
+  const n = parseFloat(s.trim().replace(',', '.'));
+  return isNaN(n) ? null : n;
+}
+
+function getParams() {
+  const g = id => document.getElementById(id).value.trim();
+  const xmin = parseNum(g('xmin')), xmax = parseNum(g('xmax'));
+  const ymin = parseNum(g('ymin')), ymax = parseNum(g('ymax'));
+  return {
+    image_id:         S.imageId,
+    x_range:          xmin !== null && xmax !== null ? [xmin, xmax] : null,
+    y_range:          ymin !== null && ymax !== null ? [ymin, ymax] : null,
+    n_curves:         g('n_curves')     !== '' ? parseInt(g('n_curves'))     : null,
+    method:           g('method'),
+    has_grid:         document.getElementById('has_grid').checked,
+    smoothing:        parseFloat(g('smoothing')),
+    n_samples:        parseInt(g('n_samples')),
+    sat_threshold:    parseFloat(g('sat_threshold')),
+    min_col_coverage: parseFloat(g('min_col_coverage')),
+    hue_bins:         parseInt(g('hue_bins')),
+    span_frac:        parseFloat(g('span_frac')),
+    max_thickness:    g('max_thickness') !== '' ? parseInt(g('max_thickness')) : null,
+    notch_factor:     parseFloat(g('notch_factor')),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+// Detection
+// ═══════════════════════════════════════════════════════════
+document.getElementById('detect-btn').addEventListener('click', runDetect);
+
+async function runDetect() {
+  if (!S.imageId) return;
+  showLoading(true);
+  setStatus('Detecting…');
+  try {
+    const res = await fetch('/api/detect', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(getParams()),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setStatus(`Error: ${err.detail || 'detection failed'}`);
+      return;
+    }
+    const data = await res.json();
+
+    S.curves   = data.curves.map((c, i) => ({
+      label:      c.label,
+      name:       `Curve ${i + 1}`,
+      color:      c.color,
+      points:     c.points,
+      visible:    true,
+    }));
+    S.calib    = data.calibration;
+    S.plotArea = data.plot_area;
+    S.selCurve = S.curves.length > 0 ? 0 : -1;
+    S.hoverPt  = null;
+    S.hoverSeg = null;
+
+    updateCurvesList();
+    document.getElementById('export-btn').disabled  = false;
+    document.getElementById('export-btn2').disabled = false;
+    setStatus(`Found ${S.curves.length} curve(s)`);
+    schedDraw();
+
+  } catch (e) {
+    setStatus(`Error: ${e.message}`);
+  } finally {
+    showLoading(false);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// Curves list
+// ═══════════════════════════════════════════════════════════
+function updateCurvesList() {
+  const sec   = document.getElementById('curves-sec');
+  const list  = document.getElementById('curves-list');
+  const count = document.getElementById('curve-count');
+  const hint  = document.getElementById('edit-hint');
+
+  if (S.curves.length === 0) { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  count.textContent = `(${S.curves.length})`;
+  list.innerHTML    = '';
+
+  S.curves.forEach((c, ci) => {
+    const [r,g,b] = c.color;
+    const item    = document.createElement('div');
+    item.className = 'cv-item' + (ci === S.selCurve ? ' sel' : '');
+
+    const dot = document.createElement('div');
+    dot.className = 'cv-dot';
+    dot.style.background = `rgb(${r},${g},${b})`;
+    dot.title = 'Click to change colour';
+
+    // Native colour picker hidden inside the dot
+    const picker = document.createElement('input');
+    picker.type  = 'color';
+    picker.value = rgbToHex(r, g, b);
+    picker.addEventListener('click', e => e.stopPropagation());
+    picker.addEventListener('input', e => {
+      const [nr,ng,nb] = hexToRgb(e.target.value);
+      c.color = [nr, ng, nb];
+      dot.style.background = `rgb(${nr},${ng},${nb})`;
+      schedDraw();
+    });
+    dot.appendChild(picker);
+
+    // Editable name
+    const name = document.createElement('div');
+    name.className    = 'cv-name';
+    name.textContent  = c.name;
+    name.title        = 'Double-click to rename';
+    name.contentEditable = 'false';
+    name.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      name.contentEditable = 'true';
+      name.focus();
+      document.execCommand('selectAll', false, null);
+    });
+    name.addEventListener('blur', () => {
+      name.contentEditable = 'false';
+      c.name = name.textContent.trim() || c.name;
+      name.textContent = c.name;
+    });
+    name.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); name.blur(); }
+      e.stopPropagation();
+    });
+
+    const pts = document.createElement('div');
+    pts.className   = 'cv-pts';
+    pts.textContent = `${c.points.length}pt`;
+
+    const eye = document.createElement('span');
+    eye.className   = 'cv-eye';
+    eye.textContent = c.visible ? '👁' : '○';
+    eye.title       = c.visible ? 'Hide' : 'Show';
+    eye.addEventListener('click', e => {
+      e.stopPropagation();
+      c.visible    = !c.visible;
+      eye.textContent = c.visible ? '👁' : '○';
+      eye.title    = c.visible ? 'Hide' : 'Show';
+      schedDraw();
+    });
+
+    const del = document.createElement('span');
+    del.className   = 'cv-del';
+    del.textContent = '✕';
+    del.title       = 'Remove curve';
+    del.addEventListener('click', e => {
+      e.stopPropagation();
+      S.curves.splice(ci, 1);
+      if (S.selCurve >= S.curves.length) S.selCurve = S.curves.length - 1;
+      updateCurvesList();
+      schedDraw();
+    });
+
+    item.append(dot, name, pts, eye, del);
+    item.addEventListener('click', () => {
+      S.selCurve = ci;
+      updateCurvesList();
+      schedDraw();
+    });
+    list.appendChild(item);
+  });
+
+  if (S.selCurve >= 0) {
+    hint.innerHTML = 'Drag point: move &nbsp;|&nbsp; Dbl-click line: add point<br>Right-click / Delete: remove point &nbsp;|&nbsp; Esc: deselect';
+  } else {
+    hint.textContent = 'Click a curve to select it for editing';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// Export
+// ═══════════════════════════════════════════════════════════
+async function doExport() {
+  if (!S.calib || S.curves.length === 0) return;
+  setStatus('Exporting…');
+  const res = await fetch('/api/export', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({
+      curves: S.curves
+        .filter(c => c.visible)
+        .map(c => ({ label: c.name, points: c.points })),
+      calibration: S.calib,
+    }),
+  });
+  if (!res.ok) { setStatus('Export failed'); return; }
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'digitized.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus('Exported!');
+}
+
+document.getElementById('export-btn').addEventListener('click',  doExport);
+document.getElementById('export-btn2').addEventListener('click', doExport);
+
+// ═══════════════════════════════════════════════════════════
+// Reset view
+// ═══════════════════════════════════════════════════════════
+document.getElementById('reset-view-btn').addEventListener('click', () => {
+  if (S.imgEl) { fitView(); schedDraw(); }
+});
+
+// ═══════════════════════════════════════════════════════════
+// UI helpers
+// ═══════════════════════════════════════════════════════════
+function toggleSec(hdr) {
+  hdr.classList.toggle('closed');
+  hdr.nextElementSibling.classList.toggle('hidden');
+}
+
+function setStatus(msg) {
+  document.getElementById('status-msg').textContent = msg;
+}
+
+function showLoading(show) {
+  document.getElementById('loading-overlay').classList.toggle('show', show);
+}
+</script>
+</body>
+</html>
