@@ -206,16 +206,23 @@ body {
 .cv-name {
   flex: 1;
   font-size: 11px;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--text);
+  font-family: inherit;
+  padding: 0 2px;
+  outline: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  outline: none;
-  border-radius: 2px;
+  cursor: default;
 }
 .cv-name:focus {
   background: var(--input-bg);
-  outline: 1px solid var(--accent);
-  padding: 0 3px;
+  border-color: var(--accent);
+  cursor: text;
   white-space: normal;
   overflow: visible;
 }
@@ -341,6 +348,18 @@ body {
         </div>
         <div class="hint">Y: bottom value first, top value second</div>
         <div class="hint">Leave blank to use OCR (less reliable)</div>
+        <div class="row" style="margin-top:8px">
+          <label>Curve label</label>
+          <input type="text" id="curve_label" placeholder="curve" title="Column header for curve name in exported CSV">
+        </div>
+        <div class="row">
+          <label>X label</label>
+          <input type="text" id="x_label" placeholder="x" title="Column header for X in exported CSV">
+        </div>
+        <div class="row">
+          <label>Y label</label>
+          <input type="text" id="y_label" placeholder="y" title="Column header for Y in exported CSV">
+        </div>
       </div>
     </div>
 
@@ -1039,21 +1058,17 @@ function updateCurvesList() {
     dot.appendChild(picker);
 
     // Editable name
-    const name = document.createElement('div');
-    name.className    = 'cv-name';
-    name.textContent  = c.name;
-    name.title        = 'Double-click to rename';
-    name.contentEditable = 'false';
-    name.addEventListener('dblclick', e => {
-      e.stopPropagation();
-      name.contentEditable = 'true';
-      name.focus();
-      document.execCommand('selectAll', false, null);
-    });
+    const name = document.createElement('input');
+    name.type      = 'text';
+    name.className = 'cv-name';
+    name.value     = c.name;
+    name.title     = 'Click to rename';
+    name.addEventListener('click',   e => e.stopPropagation());
+    name.addEventListener('dblclick',e => e.stopPropagation());
+    name.addEventListener('focus',   e => { e.stopPropagation(); name.select(); });
     name.addEventListener('blur', () => {
-      name.contentEditable = 'false';
-      c.name = name.textContent.trim() || c.name;
-      name.textContent = c.name;
+      c.name = name.value.trim() || c.name;
+      name.value = c.name;
     });
     name.addEventListener('keydown', e => {
       if (e.key === 'Enter') { e.preventDefault(); name.blur(); }
@@ -1118,6 +1133,9 @@ async function doExport() {
         .filter(c => c.visible)
         .map(c => ({ label: c.name, points: c.points })),
       calibration: S.calib,
+      curve_label: document.getElementById('curve_label').value.trim() || 'curve',
+      x_label: document.getElementById('x_label').value.trim() || 'x',
+      y_label: document.getElementById('y_label').value.trim() || 'y',
     }),
   });
   if (!res.ok) { setStatus('Export failed'); return; }

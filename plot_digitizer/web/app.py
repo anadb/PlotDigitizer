@@ -127,6 +127,9 @@ class ExportCurve(BaseModel):
 class ExportRequest(BaseModel):
     curves: list[ExportCurve]
     calibration: dict
+    curve_label: str = "curve"
+    x_label: str = "x"
+    y_label: str = "y"
 
 
 @app.post("/api/export")
@@ -136,7 +139,7 @@ def export_csv(req: ExportRequest):
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["curve", "x", "y"])
+    writer.writerow([req.curve_label, req.x_label, req.y_label])
     for c in req.curves:
         pts = sorted(c.points, key=lambda p: p[0])
         for px, py in pts:
