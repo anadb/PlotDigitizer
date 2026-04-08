@@ -61,14 +61,24 @@ body {
 
 /* ── Sidebar ─────────────────────────────────────────────── */
 #sidebar {
-  width: 284px;
+  width: 360px;
+  min-width: 160px;
+  max-width: 600px;
   background: var(--panel);
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   overflow-y: auto;
 }
+
+#sidebar-resizer {
+  width: 5px;
+  cursor: col-resize;
+  background: var(--border);
+  flex-shrink: 0;
+  transition: background .1s;
+}
+#sidebar-resizer:hover, #sidebar-resizer.dragging { background: var(--accent); }
 
 .sec { padding: 9px 12px; border-bottom: 1px solid var(--border); }
 
@@ -436,6 +446,8 @@ body {
 
   </div><!-- /sidebar -->
 
+  <div id="sidebar-resizer"></div>
+
   <div id="canvas-wrap">
     <canvas id="cv"></canvas>
     <div id="loading-overlay">
@@ -471,6 +483,7 @@ const S = {
   plotArea: null,
 
   selCurve: -1,        // index into S.curves
+  blinkUntil: 0,       // timestamp until which curves blink
 
   // View transform
   vScale: 1,
@@ -527,6 +540,21 @@ function schedDraw() {
   requestAnimationFrame(() => { _raf = false; draw(); });
 }
 
+// Returns an RGB triplet that contrasts with [r,g,b]:
+// complementary hue + inverted lightness so it's always visible.
+function contrastColor(r, g, b) {
+  // Complementary: invert each channel
+  let cr = 255 - r, cg = 255 - g, cb = 255 - b;
+  // If the result is too close to the original (near-grey input),
+  // force high-lightness white or low-lightness black based on luminance.
+  const lum = 0.299*r + 0.587*g + 0.114*b;
+  const lumC = 0.299*cr + 0.587*cg + 0.114*cb;
+  if (Math.abs(lum - lumC) < 60) {
+    return lum > 128 ? [10, 10, 10] : [245, 245, 245];
+  }
+  return [cr, cg, cb];
+}
+
 function draw() {
   ctx.clearRect(0, 0, cv.width, cv.height);
   if (!S.imgEl) return;
@@ -541,11 +569,19 @@ function draw() {
     const hov   = (S.hoverPt  && S.hoverPt.ci  === ci) ||
                   (S.hoverSeg && S.hoverSeg.ci === ci);
 
+    // --- Blink glow factor ---
+    const now = Date.now();
+    const blinkT = S.blinkUntil > now ? (S.blinkUntil - now) / 1500 : 0;
+    // pulse: 3 flashes over the blink window
+    const blinkPulse = blinkT > 0 ? Math.max(0, Math.sin(blinkT * Math.PI * 6)) : 0;
+
     // --- Line ---
     ctx.beginPath();
     ctx.strokeStyle = `rgb(${r},${g},${b})`;
-    ctx.lineWidth   = sel ? 2.2 : hov ? 1.8 : 1.5;
-    ctx.globalAlpha = sel ? 1 : hov ? 0.85 : 0.65;
+    ctx.lineWidth   = (sel ? 2.2 : hov ? 1.8 : 1.5) + blinkPulse * 4;
+    ctx.globalAlpha = (sel ? 1 : hov ? 0.85 : 0.65) + blinkPulse * 0.35;
+    ctx.shadowColor = blinkPulse > 0 ? `rgb(${r},${g},${b})` : 'transparent';
+    ctx.shadowBlur  = blinkPulse * 18;
     const [x0,y0] = toCanvas(c.points[0][0], c.points[0][1]);
     ctx.moveTo(x0, y0);
     for (let pi = 1; pi < c.points.length; pi++) {
@@ -554,6 +590,8 @@ function draw() {
     }
     ctx.stroke();
     ctx.globalAlpha = 1;
+    ctx.shadowBlur  = 0;
+    ctx.shadowColor = 'transparent';
 
     if (!sel) continue;
 
@@ -579,6 +617,7 @@ function draw() {
     }
 
     // --- Points (only on selected curve) ---
+    const [cr, cg, cb] = contrastColor(r, g, b);
     for (let pi = 0; pi < c.points.length; pi++) {
       const [cx2,cy2] = toCanvas(c.points[pi][0], c.points[pi][1]);
       const hp = S.hoverPt && S.hoverPt.ci === ci && S.hoverPt.pi === pi;
@@ -587,13 +626,11 @@ function draw() {
 
       ctx.beginPath();
       ctx.arc(cx2, cy2, big ? 6 : 3, 0, Math.PI * 2);
-      ctx.fillStyle   = big ? '#ffffff' : `rgba(${r},${g},${b},0.85)`;
+      ctx.fillStyle   = big ? '#ffffff' : `rgba(${cr},${cg},${cb},0.9)`;
       ctx.fill();
-      if (big) {
-        ctx.strokeStyle = `rgb(${r},${g},${b})`;
-        ctx.lineWidth   = 1.5;
-        ctx.stroke();
-      }
+      ctx.strokeStyle = big ? `rgb(${r},${g},${b})` : `rgb(${cr},${cg},${cb})`;
+      ctx.lineWidth   = big ? 1.5 : 1;
+      ctx.stroke();
     }
   }
 }
@@ -951,7 +988,11 @@ async function runDetect() {
     document.getElementById('export-btn').disabled  = false;
     document.getElementById('export-btn2').disabled = false;
     setStatus(`Found ${S.curves.length} curve(s)`);
-    schedDraw();
+    S.blinkUntil = Date.now() + 1500;
+    (function blinkLoop() {
+      schedDraw();
+      if (Date.now() < S.blinkUntil) requestAnimationFrame(blinkLoop);
+    })();
 
   } catch (e) {
     setStatus(`Error: ${e.message}`);
@@ -1115,6 +1156,33 @@ function setStatus(msg) {
 function showLoading(show) {
   document.getElementById('loading-overlay').classList.toggle('show', show);
 }
+
+// ── Sidebar resize ────────────────────────────────────────
+(function() {
+  const resizer = document.getElementById('sidebar-resizer');
+  const sidebar = document.getElementById('sidebar');
+  let startX, startW;
+
+  resizer.addEventListener('mousedown', e => {
+    startX = e.clientX;
+    startW = sidebar.offsetWidth;
+    resizer.classList.add('dragging');
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    e.preventDefault();
+  });
+
+  function onMove(e) {
+    const w = Math.max(160, Math.min(600, startW + e.clientX - startX));
+    sidebar.style.width = w + 'px';
+  }
+
+  function onUp() {
+    resizer.classList.remove('dragging');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
+})();
 </script>
 </body>
 </html>
