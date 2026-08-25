@@ -15,6 +15,31 @@ def setup_logging(verbose: bool = False) -> None:
     )
 
 
+def _parse_color(s: str) -> tuple[int, int, int]:
+    """Parse '#rrggbb', '#rgb', or 'r,g,b' into an RGB tuple."""
+    raw = s.strip()
+    if raw.startswith("#"):
+        h = raw[1:]
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        if len(h) != 6:
+            raise ValueError(f"Invalid hex colour: {s!r} (expected #rrggbb)")
+        try:
+            return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+        except ValueError as exc:
+            raise ValueError(f"Invalid hex colour: {s!r}") from exc
+    parts = [p.strip() for p in raw.replace(" ", ",").split(",") if p.strip()]
+    if len(parts) != 3:
+        raise ValueError(f"Invalid RGB colour: {s!r} (expected r,g,b or #rrggbb)")
+    try:
+        rgb = tuple(int(p) for p in parts)
+    except ValueError as exc:
+        raise ValueError(f"Invalid RGB colour: {s!r}") from exc
+    if not all(0 <= c <= 255 for c in rgb):
+        raise ValueError(f"RGB components must be 0–255: {s!r}")
+    return rgb  # type: ignore[return-value]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Convert a plot image to CSV data",
@@ -122,6 +147,21 @@ def main() -> None:
         metavar="F",
         help="Spread > max_thickness * notch_factor triggers deep-notch mode (use max y)",
     )
+    parser.add_argument(
+        "--color",
+        action="append",
+        default=None,
+        metavar="COLOR",
+        help="Target curve colour as #rrggbb or r,g,b (repeatable). "
+             "When set, extract only pixels near these colours.",
+    )
+    parser.add_argument(
+        "--color-tolerance",
+        type=float,
+        default=40.0,
+        metavar="D",
+        help="Max Euclidean RGB distance for --color matching (anti-aliasing / JPEG)",
+    )
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
     args = parser.parse_args()
 
@@ -137,6 +177,14 @@ def main() -> None:
 
     x_range = tuple(args.x_range) if args.x_range else None
     y_range = tuple(args.y_range) if args.y_range else None
+
+    target_colors = None
+    if args.color:
+        try:
+            target_colors = [_parse_color(c) for c in args.color]
+        except ValueError as exc:
+            logger.error(str(exc))
+            sys.exit(1)
 
     from .digitizer import digitize_plot
 
@@ -156,6 +204,8 @@ def main() -> None:
         span_frac=args.span_frac,
         max_thickness=args.max_thickness,
         notch_factor=args.notch_factor,
+        target_colors=target_colors,
+        color_tolerance=args.color_tolerance,
     )
     logger.info(f"Output written to: {output_path}")
 

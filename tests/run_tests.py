@@ -100,7 +100,8 @@ def _run_test(name, curves, x_range, y_range, grid=False,
               n_curves=None, smoothing=1.0,
               n_samples=500, sat_threshold=0.20, min_col_coverage=0.20,
               hue_bins=18, span_frac=0.55, max_thickness=None, notch_factor=3.0,
-              pass_threshold=None):
+              pass_threshold=None, target_colors=None, color_tolerance=40.0,
+              check_gt=None, expect_n_curves=None):
     img_path, gt = _make_plot(curves, x_range, y_range,
                                grid=grid, dpi=dpi, fmt=fmt, quality=quality,
                                linewidth=linewidth)
@@ -130,7 +131,9 @@ def _run_test(name, curves, x_range, y_range, grid=False,
                               hue_bins=hue_bins,
                               span_frac=span_frac,
                               max_thickness=max_thickness,
-                              notch_factor=notch_factor)
+                              notch_factor=notch_factor,
+                              target_colors=target_colors,
+                              color_tolerance=color_tolerance)
 
         # Convert pixels → data coords
         digitised = {}
@@ -141,16 +144,20 @@ def _run_test(name, curves, x_range, y_range, grid=False,
             digitised[label] = _np.column_stack([xs_d[order], ys_d[order]])
 
         errors = _match_curves(digitised, gt, x_range, y_range)
+        if check_gt is not None:
+            errors = {k: v for k, v in errors.items() if k in check_gt}
 
         threshold = pass_threshold if pass_threshold is not None else PASS_RMS_THRESHOLD
-        passed = all(e <= threshold for e in errors.values())
+        expected_n = expect_n_curves if expect_n_curves is not None else len(curves)
+        n_ok = len(digitised) == expected_n
+        passed = n_ok and all(e <= threshold for e in errors.values())
         status = "PASS" if passed else "FAIL"
         print(f"[{status}] {name}  (threshold={threshold*100:.0f}%)")
         for gt_lbl, rms in errors.items():
             mark = "✓" if rms <= threshold else "✗"
             print(f"       {mark} {gt_lbl}: RMS={rms*100:.2f}% of y-range")
-        if len(digitised) != len(curves):
-            print(f"       ! Expected {len(curves)} curves, got {len(digitised)}")
+        if not n_ok:
+            print(f"       ! Expected {expected_n} curves, got {len(digitised)}")
         return passed
 
     except Exception as exc:
@@ -615,6 +622,60 @@ def test_noisy_partial_curve():
     )
 
 
+def test_target_color_hint():
+    """User-picked colour extracts only that curve among distractors."""
+    return _run_test(
+        "Custom colour hint (C0 among two distractors)",
+        curves=[
+            ("sin", np.sin, "#1f77b4"),
+            ("cos", np.cos, "#ff7f0e"),
+            ("half", lambda x: 0.5 * np.sin(2 * x), "#2ca02c"),
+        ],
+        x_range=(0, 2 * np.pi),
+        y_range=(-1.2, 1.2),
+        target_colors=[(31, 119, 180)],
+        color_tolerance=40,
+        check_gt=["sin"],
+        expect_n_curves=1,
+    )
+
+
+def test_target_color_proximity():
+    """Nearby (not exact) RGB still matches the curve within tolerance."""
+    return _run_test(
+        "Custom colour proximity (offset RGB still matches C0)",
+        curves=[
+            ("sin", np.sin, "#1f77b4"),
+            ("cos", np.cos, "#ff7f0e"),
+            ("half", lambda x: 0.5 * np.sin(2 * x), "#2ca02c"),
+        ],
+        x_range=(0, 2 * np.pi),
+        y_range=(-1.2, 1.2),
+        target_colors=[(39, 114, 190)],  # ~14 units from (31, 119, 180)
+        color_tolerance=40,
+        check_gt=["sin"],
+        expect_n_curves=1,
+    )
+
+
+def test_target_colors_two():
+    """Two picked colours extract two matching curves."""
+    return _run_test(
+        "Custom colour hint (two colours)",
+        curves=[
+            ("sin", np.sin, "#1f77b4"),
+            ("cos", np.cos, "#ff7f0e"),
+            ("half", lambda x: 0.5 * np.sin(2 * x), "#2ca02c"),
+        ],
+        x_range=(0, 2 * np.pi),
+        y_range=(-1.2, 1.2),
+        target_colors=[(31, 119, 180), (255, 127, 14)],
+        color_tolerance=40,
+        check_gt=["sin", "cos"],
+        expect_n_curves=2,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -648,6 +709,10 @@ TESTS = [
     test_wide_spread_sparse_noise,
     test_noisy_low_quality_jpeg,
     test_noisy_partial_curve,
+    # Custom colour hint
+    test_target_color_hint,
+    test_target_color_proximity,
+    test_target_colors_two,
 ]
 
 

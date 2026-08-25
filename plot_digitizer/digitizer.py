@@ -32,6 +32,8 @@ def digitize_plot(
     span_frac: float = 0.55,
     max_thickness: Optional[int] = None,
     notch_factor: float = 3.0,
+    target_colors: Optional[list[tuple[int, int, int]]] = None,
+    color_tolerance: float = 40.0,
 ) -> None:
     """
     Full pipeline: load image → detect plot area → read axes → extract curves
@@ -66,6 +68,7 @@ def digitize_plot(
         min_col_coverage=min_col_coverage, hue_bins=hue_bins,
         span_frac=span_frac, max_thickness=max_thickness,
         notch_factor=notch_factor,
+        target_colors=target_colors, color_tolerance=color_tolerance,
     )
     n_curves = len(curves)
     logger.info(f"Curves found: {n_curves}  (method={method})")

@@ -22,6 +22,8 @@ def extract_curves(
     span_frac: float = 0.55,
     max_thickness: Optional[int] = None,
     notch_factor: float = 3.0,
+    target_colors: Optional[list[tuple[int, int, int]]] = None,
+    color_tolerance: float = 40.0,
 ) -> dict[str, np.ndarray]:
     """
     Extract digitised curves from the plot area.
@@ -35,6 +37,9 @@ def extract_curves(
         span_frac:      Row/col must span this fraction of canvas to count as a grid line.
         max_thickness:  Max pixel cluster height for per-column extraction (auto if None).
         notch_factor:   Spread > max_thickness * notch_factor triggers deep-notch mode.
+        target_colors:  If given, extract only pixels near these RGB colours
+                        instead of automatic hue-bin segmentation.
+        color_tolerance: Euclidean RGB distance for target-colour matching.
 
     Returns dict mapping colour label → Nx2 float array of
     (pixel_x, pixel_y) values in image coordinates.
@@ -49,10 +54,12 @@ def extract_curves(
         min_col_coverage=min_col_coverage,
         hue_bins=hue_bins,
         span_frac=span_frac,
+        target_colors=target_colors,
+        color_tolerance=color_tolerance,
     )
 
-    # Keep only the top-N masks by pixel count
-    if n_curves is not None and len(color_masks) > n_curves:
+    # Keep only the top-N masks by pixel count (skip when the user picked colours)
+    if target_colors is None and n_curves is not None and len(color_masks) > n_curves:
         ranked = sorted(color_masks.items(), key=lambda kv: kv[1].sum(), reverse=True)
         color_masks = dict(ranked[:n_curves])
         logger.info(f"Keeping top {n_curves} segments by pixel count")
@@ -88,12 +95,15 @@ def _segment_by_color(
     has_grid: bool = False,
     min_col_coverage: float = 0.20,
     span_frac: float = 0.55,
+    target_colors: Optional[list[tuple[int, int, int]]] = None,
+    color_tolerance: float = 40.0,
 ) -> dict[str, np.ndarray]:
     """
     Return {label: bool_mask} for each distinct colour group.
 
     Handles coloured curves (via hue binning) and achromatic gray curves.
     Optionally removes grid lines before analysis.
+    If target_colors is given, match pixels by RGB proximity instead of hue bins.
     """
     r = canvas[:, :, 0] / 255.0
     g = canvas[:, :, 1] / 255.0
@@ -112,6 +122,12 @@ def _segment_by_color(
     if has_grid:
         grid_px = int(grid_mask.sum())
         logger.info(f"Grid pixels suppressed: {grid_px}")
+
+    if target_colors:
+        return _segment_by_target_colors(
+            canvas, target_colors, color_tolerance, grid_mask,
+            min_col_coverage, min_pixel_fraction,
+        )
 
     # Hue in [0, 360)
     hue = np.zeros_like(r)
@@ -188,6 +204,56 @@ def _segment_by_color(
         masks[label_i] = combined
         used[i] = True
 
+    return masks
+
+
+def _segment_by_target_colors(
+    canvas: np.ndarray,
+    target_colors: list[tuple[int, int, int]],
+    color_tolerance: float,
+    grid_mask: np.ndarray,
+    min_col_coverage: float,
+    min_pixel_fraction: float,
+) -> dict[str, np.ndarray]:
+    """
+    Build one mask per user-picked RGB colour using Euclidean proximity.
+
+    Exact channel equality is not required: anti-aliased / JPEG pixels around
+    the curve still match if they fall within color_tolerance.
+    """
+    h_px, w_px = canvas.shape[:2]
+    total_pixels = h_px * w_px
+    coverage = min(min_col_coverage, 0.05)
+    effective_min_px_frac = min_pixel_fraction * (coverage / 0.20)
+
+    masks: dict[str, np.ndarray] = {}
+    for i, rgb in enumerate(target_colors):
+        tr, tg, tb = (int(c) for c in rgb[:3])
+        tr = max(0, min(255, tr))
+        tg = max(0, min(255, tg))
+        tb = max(0, min(255, tb))
+        diff = canvas - np.array([tr, tg, tb], dtype=np.float32)
+        dist = np.sqrt((diff * diff).sum(axis=2))
+        bin_mask = (dist <= color_tolerance) & ~grid_mask
+        n_px = int(bin_mask.sum())
+        if n_px < total_pixels * effective_min_px_frac:
+            logger.warning(
+                f"Target colour rgb({tr},{tg},{tb}): only {n_px} pixels "
+                f"(tolerance={color_tolerance:.0f})"
+            )
+            continue
+        col_hits = int(bin_mask.any(axis=0).sum())
+        if col_hits < w_px * coverage:
+            logger.warning(
+                f"Target colour rgb({tr},{tg},{tb}): spans {col_hits}/{w_px} columns"
+            )
+            continue
+        label = f"curve_hint{i:02d}_rgb{tr:03d}{tg:03d}{tb:03d}"
+        masks[label] = bin_mask
+        logger.info(
+            f"Target colour {label}: {n_px} px, {col_hits} columns "
+            f"(tolerance={color_tolerance:.0f})"
+        )
     return masks
 
 

@@ -177,6 +177,60 @@ body {
 .btn-sec:hover { border-color: var(--accent); color: var(--accent); }
 .btn-sec:disabled { opacity: .4; cursor: not-allowed; }
 
+.icon-btn {
+  padding: 3px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+.icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+.icon-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(233,69,96,.12);
+}
+.swatch-input {
+  width: 28px; height: 22px;
+  padding: 0; border: 1px solid var(--border);
+  border-radius: 4px; background: var(--input-bg);
+  cursor: pointer; flex-shrink: 0;
+}
+#color-chips { padding-left: 114px; margin-bottom: 4px; min-height: 0; }
+.color-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 4px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 2px 4px 2px 0;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.color-chip .chip-swatch {
+  width: 10px; height: 10px; border-radius: 2px;
+  border: 1px solid rgba(255,255,255,0.2); flex-shrink: 0;
+}
+.color-chip .chip-x { cursor: pointer; opacity: .45; }
+.color-chip .chip-x:hover { opacity: 1; color: var(--accent); }
+#eyedrop-preview {
+  position: fixed;
+  width: 22px; height: 22px;
+  border: 2px solid #fff;
+  border-radius: 3px;
+  pointer-events: none;
+  display: none;
+  z-index: 20;
+  box-shadow: 0 0 0 1px #000, 0 2px 8px rgba(0,0,0,.5);
+}
+#cv.eyedropper { cursor: crosshair; }
+
 /* ── Curves list ─────────────────────────────────────────── */
 .cv-item {
   display: flex;
@@ -395,6 +449,27 @@ body {
           <span class="val" id="sat_val">0.20</span>
         </div>
         <div class="hint">Lower = detect paler curves</div>
+        <div class="row" style="margin-top:8px">
+          <label>Custom colour</label>
+          <input type="checkbox" id="use_target_color" title="Restrict detection to user-picked colour(s)">
+        </div>
+        <div id="target-color-block" style="display:none">
+          <div class="row">
+            <label>Curve colour</label>
+            <button type="button" class="icon-btn" id="eyedropper-btn" title="Pick colour from the plot">Pipette</button>
+            <input type="color" class="swatch-input" id="target_color_swatch" value="#1f77b4" title="Pick a colour">
+            <input type="text" id="target_color_hex" value="#1f77b4" placeholder="#rrggbb" maxlength="7" title="Hex colour">
+            <button type="button" class="icon-btn" id="add-color-btn" title="Add this colour">+</button>
+          </div>
+          <div id="color-chips"></div>
+          <div class="hint">Click Pipette, then click the curve on the image — or type hex and press +</div>
+          <div class="row" style="margin-top:5px">
+            <label>Proximity</label>
+            <input type="range" id="color_tolerance" min="10" max="120" step="1" value="40">
+            <span class="val" id="tol_val">40</span>
+          </div>
+          <div class="hint">Higher = match more similar shades (anti-aliasing, JPEG)</div>
+        </div>
         <div class="row" style="margin-top:5px">
           <label>Min coverage</label>
           <input type="range" id="min_col_coverage" min="0.01" max="1.00" step="0.01" value="0.20">
@@ -480,6 +555,8 @@ body {
   </div>
 </div><!-- /main -->
 
+<div id="eyedrop-preview"></div>
+
 <div id="statusbar">
   <span>Scroll: zoom &nbsp;|&nbsp; Alt+drag / middle-drag: pan &nbsp;|&nbsp; Click curve: select &nbsp;|&nbsp; Drag point: move &nbsp;|&nbsp; Dbl-click line: add point &nbsp;|&nbsp; Right-click point: delete</span>
   <span id="coord-display">—</span>
@@ -514,6 +591,10 @@ const S = {
   hoverPt:  null,      // {ci, pi}
   hoverSeg: null,      // {ci, si}  — for insertion cue
   _mx: 0, _my: 0,      // last mouse canvas pos
+
+  useTargetColor: false,
+  targetColors: [],    // [[r,g,b], ...]
+  pickingColor: false,
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -712,6 +793,7 @@ function hitCurve(mx, my) {
 // ═══════════════════════════════════════════════════════════
 cv.addEventListener('contextmenu', e => {
   e.preventDefault();
+  if (S.pickingColor) return;
   const hp = hitPoint(e.offsetX, e.offsetY);
   if (hp) {
     S.curves[hp.ci].points.splice(hp.pi, 1);
@@ -733,6 +815,15 @@ cv.addEventListener('dblclick', e => {
 });
 
 cv.addEventListener('mousedown', e => {
+  if (S.pickingColor && e.button === 0) {
+    e.preventDefault();
+    const [ix, iy] = toImage(e.offsetX, e.offsetY);
+    const rgb = samplePixel(ix, iy);
+    if (rgb) addTargetColor(rgb);
+    setPickingColor(false);
+    return;
+  }
+
   // Middle click or Alt+Left = pan
   if (e.button === 1 || (e.button === 0 && e.altKey)) {
     S.panning = { sx: e.clientX, sy: e.clientY, sox: S.vOX, soy: S.vOY };
@@ -767,6 +858,17 @@ cv.addEventListener('mousemove', e => {
     S.vOX = S.panning.sox + (e.clientX - S.panning.sx);
     S.vOY = S.panning.soy + (e.clientY - S.panning.sy);
     schedDraw();
+    return;
+  }
+
+  if (S.pickingColor) {
+    const [ix, iy] = toImage(mx, my);
+    const rgb = samplePixel(ix, iy);
+    if (rgb) {
+      showEyedropPreview(e.clientX, e.clientY, rgb);
+      showCoord(ix, iy, rgb);
+    }
+    cv.style.cursor = 'crosshair';
     return;
   }
 
@@ -823,6 +925,7 @@ cv.addEventListener('mouseup', () => {
 cv.addEventListener('mouseleave', () => {
   S.panning  = null;
   S.dragging = null;
+  hideEyedropPreview();
   const changed = S.hoverPt || S.hoverSeg;
   S.hoverPt  = null;
   S.hoverSeg = null;
@@ -842,6 +945,10 @@ cv.addEventListener('wheel', e => {
 
 // Keyboard shortcuts
 window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.pickingColor) {
+    setPickingColor(false);
+    return;
+  }
   if (e.key === 'r' || e.key === 'R') { if (S.imgEl) { fitView(); schedDraw(); } }
   if (e.key === 'Escape') { S.selCurve = -1; updateCurvesList(); schedDraw(); }
   if ((e.key === 'Delete' || e.key === 'Backspace') && S.hoverPt) {
@@ -856,12 +963,14 @@ window.addEventListener('keydown', e => {
 // ═══════════════════════════════════════════════════════════
 // Coordinate display
 // ═══════════════════════════════════════════════════════════
-function showCoord(ix, iy) {
+function showCoord(ix, iy, rgb) {
   const el = document.getElementById('coord-display');
-  if (!S.calib) { el.textContent = `px (${Math.round(ix)}, ${Math.round(iy)})`; return; }
+  let extra = '';
+  if (rgb) extra = `  rgb(${rgb[0]},${rgb[1]},${rgb[2]}) ${rgbToHex(rgb[0], rgb[1], rgb[2])}`;
+  if (!S.calib) { el.textContent = `px (${Math.round(ix)}, ${Math.round(iy)})${extra}`; return; }
   const dx = pxToData(ix, S.calib.x);
   const dy = pxToData(iy, S.calib.y);
-  el.textContent = `data (${dx.toPrecision(5)},  ${dy.toPrecision(5)})`;
+  el.textContent = `data (${dx.toPrecision(5)},  ${dy.toPrecision(5)})${extra}`;
 }
 
 function rgbToHex(r, g, b) {
@@ -936,6 +1045,7 @@ linkSlider('min_col_coverage','cov_val',    2);
 linkSlider('span_frac',       'span_val',   2);
 linkSlider('smoothing',       'smooth_val', 1);
 linkSlider('notch_factor',    'notch_val',  1);
+linkSlider('color_tolerance', 'tol_val',    0);
 
 // ═══════════════════════════════════════════════════════════
 // Build detection params from UI
@@ -965,8 +1075,160 @@ function getParams() {
     span_frac:        parseFloat(g('span_frac')),
     max_thickness:    g('max_thickness') !== '' ? parseInt(g('max_thickness')) : null,
     notch_factor:     parseFloat(g('notch_factor')),
+    target_colors:    _targetColorsForDetect(),
+    color_tolerance:  parseFloat(g('color_tolerance')),
   };
 }
+
+function _targetColorsForDetect() {
+  if (!document.getElementById('use_target_color').checked) return null;
+  return S.targetColors.length ? S.targetColors : null;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Custom target colours (optional)
+// ═══════════════════════════════════════════════════════════
+const _sampleCv  = document.createElement('canvas');
+const _sampleCtx = _sampleCv.getContext('2d', { willReadFrequently: true });
+_sampleCv.width = 1;
+_sampleCv.height = 1;
+
+function samplePixel(ix, iy) {
+  if (!S.imgEl || !_sampleCtx) return null;
+  const x = Math.max(0, Math.min(S.imgW - 1, Math.floor(ix)));
+  const y = Math.max(0, Math.min(S.imgH - 1, Math.floor(iy)));
+  try {
+    _sampleCtx.clearRect(0, 0, 1, 1);
+    _sampleCtx.drawImage(S.imgEl, -x, -y);
+    const d = _sampleCtx.getImageData(0, 0, 1, 1).data;
+    return [d[0], d[1], d[2]];
+  } catch (_) {
+    return null;
+  }
+}
+
+function parseHexColor(s) {
+  const h = s.trim().replace(/^#/, '');
+  if (/^[0-9a-fA-F]{3}$/.test(h)) {
+    return [
+      parseInt(h[0] + h[0], 16),
+      parseInt(h[1] + h[1], 16),
+      parseInt(h[2] + h[2], 16),
+    ];
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(h)) {
+    return [
+      parseInt(h.slice(0, 2), 16),
+      parseInt(h.slice(2, 4), 16),
+      parseInt(h.slice(4, 6), 16),
+    ];
+  }
+  return null;
+}
+
+function setPendingColor(r, g, b) {
+  const hex = rgbToHex(r, g, b);
+  document.getElementById('target_color_swatch').value = hex;
+  document.getElementById('target_color_hex').value = hex;
+}
+
+function addTargetColor(rgb) {
+  const [r, g, b] = rgb;
+  const exists = S.targetColors.some(([cr, cg, cb]) => cr === r && cg === g && cb === b);
+  if (!exists) S.targetColors.push([r, g, b]);
+  setPendingColor(r, g, b);
+  renderColorChips();
+  setStatus(`Colour ${rgbToHex(r, g, b)} added`);
+}
+
+function renderColorChips() {
+  const box = document.getElementById('color-chips');
+  box.innerHTML = '';
+  S.targetColors.forEach((rgb, i) => {
+    const [r, g, b] = rgb;
+    const chip = document.createElement('span');
+    chip.className = 'color-chip';
+    chip.innerHTML =
+      `<span class="chip-swatch" style="background:rgb(${r},${g},${b})"></span>` +
+      `${rgbToHex(r, g, b)}` +
+      `<span class="chip-x" title="Remove">✕</span>`;
+    chip.querySelector('.chip-x').addEventListener('click', e => {
+      e.stopPropagation();
+      S.targetColors.splice(i, 1);
+      renderColorChips();
+    });
+    box.appendChild(chip);
+  });
+}
+
+function setPickingColor(on) {
+  S.pickingColor = !!on && !!S.imgEl && document.getElementById('use_target_color').checked;
+  cv.classList.toggle('eyedropper', S.pickingColor);
+  document.getElementById('eyedropper-btn').classList.toggle('active', S.pickingColor);
+  if (S.pickingColor) {
+    setStatus('Click the curve on the image to sample its colour (Esc to cancel)');
+  } else {
+    hideEyedropPreview();
+  }
+}
+
+function showEyedropPreview(clientX, clientY, rgb) {
+  const el = document.getElementById('eyedrop-preview');
+  el.style.display = 'block';
+  el.style.left = (clientX + 14) + 'px';
+  el.style.top  = (clientY + 14) + 'px';
+  el.style.background = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+}
+
+function hideEyedropPreview() {
+  document.getElementById('eyedrop-preview').style.display = 'none';
+}
+
+(function initTargetColorUi() {
+  const chk     = document.getElementById('use_target_color');
+  const block   = document.getElementById('target-color-block');
+  const swatch  = document.getElementById('target_color_swatch');
+  const hexEl   = document.getElementById('target_color_hex');
+  const addBtn  = document.getElementById('add-color-btn');
+  const dropBtn = document.getElementById('eyedropper-btn');
+
+  function syncBlock() {
+    S.useTargetColor = chk.checked;
+    block.style.display = chk.checked ? '' : 'none';
+    if (!chk.checked) setPickingColor(false);
+  }
+  chk.addEventListener('change', syncBlock);
+
+  swatch.addEventListener('input', () => {
+    hexEl.value = swatch.value;
+  });
+  swatch.addEventListener('change', () => {
+    addTargetColor(hexToRgb(swatch.value));
+  });
+
+  hexEl.addEventListener('change', () => {
+    const rgb = parseHexColor(hexEl.value);
+    if (rgb) setPendingColor(rgb[0], rgb[1], rgb[2]);
+    else hexEl.value = swatch.value;
+  });
+  hexEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addBtn.click();
+    }
+  });
+
+  addBtn.addEventListener('click', () => {
+    const rgb = parseHexColor(hexEl.value) || hexToRgb(swatch.value);
+    if (rgb) addTargetColor(rgb);
+  });
+
+  dropBtn.addEventListener('click', () => {
+    if (!S.imgEl) { setStatus('Load an image first'); return; }
+    if (!chk.checked) { chk.checked = true; syncBlock(); }
+    setPickingColor(!S.pickingColor);
+  });
+})();
 
 // ═══════════════════════════════════════════════════════════
 // Detection

@@ -74,6 +74,8 @@ class DetectRequest(BaseModel):
     span_frac: float = 0.55
     max_thickness: Optional[int] = None
     notch_factor: float = 3.0
+    target_colors: Optional[list[list[int]]] = None
+    color_tolerance: float = 40.0
 
 
 @app.post("/api/detect")
@@ -101,6 +103,8 @@ def detect(req: DetectRequest):
         span_frac=req.span_frac,
         max_thickness=req.max_thickness,
         notch_factor=req.notch_factor,
+        target_colors=_normalize_target_colors(req.target_colors),
+        color_tolerance=req.color_tolerance,
     )
 
     curves = [
@@ -168,6 +172,20 @@ def _color_from_label(name: str) -> list[int]:
         v = int(m.group(1))
         return [v, v, v]
     return [120, 160, 220]
+
+
+def _normalize_target_colors(
+    colors: Optional[list[list[int]]],
+) -> Optional[list[tuple[int, int, int]]]:
+    if not colors:
+        return None
+    out: list[tuple[int, int, int]] = []
+    for c in colors:
+        if len(c) < 3:
+            continue
+        r, g, b = (max(0, min(255, int(v))) for v in c[:3])
+        out.append((r, g, b))
+    return out or None
 
 
 # ---------------------------------------------------------------------------
